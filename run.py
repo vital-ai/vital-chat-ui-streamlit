@@ -17,6 +17,7 @@ if __name__ == "__main__":
     os.environ["STREAMLIT_SERVER_RUN_ON_SAVE"] = "false"
     os.environ["STREAMLIT_CLIENT_TOOLBAR_MODE"] = "minimal"
     os.environ["STREAMLIT_CLIENT_SHOW_SIDEBAR_NAVIGATION"] = "false"
+    os.environ["STREAMLIT_CLIENT_SHOW_ERROR_DETAILS"] = "false"
 
     script_path = os.path.abspath("app.py")
     subprocess.run(["streamlit", "run", script_path])
