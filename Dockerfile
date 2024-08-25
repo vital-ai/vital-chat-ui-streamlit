@@ -15,6 +15,13 @@ ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS="false"
 ENV STREAMLIT_SERVER_ENABLE_CORS="false"
 ENV STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION="false"
 
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    g++ \
+    && apt-get clean \
+
+ENV CXXFLAGS="-std=c++11"
+
 # Set the working directory in the container
 WORKDIR /app
 

@@ -4,3 +4,4 @@ websockets>=12.0
 vital-agent-container-client>=0.0.3
 vital-agent-eval-env>=0.0.2
 vital-ai-haley-kg>=0.1.13
+vital-ai-aimp>=0.1.7

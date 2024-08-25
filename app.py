@@ -55,7 +55,9 @@ def response_generator(prompt):
 
         handler = LocalMessageHandler()
 
-        client = VitalAgentContainerClient("http://localhost:7007", handler)
+        # client = VitalAgentContainerClient("http://localhost:7007", handler)
+
+        client = VitalAgentContainerClient("http://host.docker.internal:7007", handler)
 
         health = await client.check_health()
 
