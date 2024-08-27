@@ -1,14 +1,26 @@
 import json
+import logging
 import streamlit as st
 import time
 import asyncio
+
+from ai_haley_kg_domain.model.KGChatBotMessage import KGChatBotMessage
+from ai_haley_kg_domain.model.KGChatUserMessage import KGChatUserMessage
 from com_vitalai_aimp_domain.model.AIMPIntent import AIMPIntent
 from com_vitalai_aimp_domain.model.AgentMessageContent import AgentMessageContent
 from com_vitalai_aimp_domain.model.UserMessageContent import UserMessageContent
+from com_vitalai_haleyai_question_domain.model.HaleyContainer import HaleyContainer
 from vital_agent_container_client.aimp_message_handler_inf import AIMPMessageHandlerInf
 from vital_agent_container_client.vital_agent_container_client import VitalAgentContainerClient
 from vital_ai_vitalsigns.utils.uri_generator import URIGenerator
 from vital_ai_vitalsigns.vitalsigns import VitalSigns
+
+from vitalsignsutils.vitalsignsutils import VitalSignsUtils
+
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+)
 
 
 class LocalMessageHandler(AIMPMessageHandlerInf):
@@ -29,6 +41,10 @@ def main():
 
     st.title("Testing Agent")
 
+    logger = logging.getLogger(__name__)
+
+    logger.info("Chat UI Starting Up...")
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -37,7 +53,11 @@ def main():
             st.markdown(message["content"])
 
     if prompt := st.chat_input("Message to Agent"):
+
+        # logger.info(st.session_state.messages)
+
         st.session_state.messages.append({"role": "user", "content": prompt})
+
         with st.chat_message("user"):
             st.markdown(prompt)
 
@@ -48,6 +68,8 @@ def main():
 
 
 def response_generator(prompt):
+
+    logger = logging.getLogger(__name__)
 
     async def generate_responses(prompt_message):
 
@@ -73,7 +95,34 @@ def response_generator(prompt):
         user_content.URI = URIGenerator.generate_uri()
         user_content.text = prompt_message
 
+        # logger.info(st.session_state.messages)
+
+        history_list = []
+
+        for m in st.session_state.messages[:-1]:
+            role = m["role"]
+            content = m["content"]
+
+            if role == "user":
+                user_message = KGChatUserMessage()
+                user_message.URI = URIGenerator.generate_uri()
+                user_message.kGChatMessageText = content
+                history_list.append(user_message)
+
+            if role == "assistant":
+                bot_message = KGChatBotMessage()
+                bot_message.URI = URIGenerator.generate_uri()
+                bot_message.kGChatMessageText = content
+                history_list.append(bot_message)
+
         message = [aimp_msg, user_content]
+
+        if len(history_list) > 0:
+            container = HaleyContainer()
+            container.URI = URIGenerator.generate_uri()
+            container = VitalSignsUtils.pack_container(container, history_list)
+            message.append(container)
+
         # string
         message_json = vs.to_json(message)
         # list of dict
