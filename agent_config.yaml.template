@@ -1,0 +1,9 @@
+vital_chat_ui:
+  account_uri: "account_id"
+  login_id: "login_id"
+  username: "Firstname Lastname"
+  use_streamlit_session_id: true
+
+
+
+

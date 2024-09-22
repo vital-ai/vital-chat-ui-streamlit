@@ -1,9 +1,9 @@
 import json
 import logging
+import re
 import streamlit as st
 import time
 import asyncio
-
 from ai_haley_kg_domain.model.KGChatBotMessage import KGChatBotMessage
 from ai_haley_kg_domain.model.KGChatUserMessage import KGChatUserMessage
 from ai_haley_kg_domain.model.KGToolRequest import KGToolRequest
@@ -18,6 +18,7 @@ from vital_agent_kg_utils.vitalsignsutils.vitalsignsutils import VitalSignsUtils
 from vital_ai_vitalsigns.utils.uri_generator import URIGenerator
 from vital_ai_vitalsigns.vitalsigns import VitalSigns
 
+from vital_chat_ui_app.utils.config_utils import ConfigUtils
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -56,7 +57,9 @@ def main():
 
     logger.info("Chat UI Starting Up...")
 
-    # session_id = get_session_id()
+    config = ConfigUtils.load_config()
+
+    logger.info("Chat UI Config Loaded.")
 
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(id(st.session_state))
@@ -77,17 +80,41 @@ def main():
 
     if prompt := st.chat_input("Message to Agent"):
 
-        # logger.info(st.session_state.messages)
-
         st.session_state.messages.append({"role": "user", "content": prompt})
 
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            response = st.write_stream(response_generator(prompt))
+            # response = st.write_stream(response_generator(prompt))
 
-        st.session_state.messages.append({"role": "assistant", "content": response})
+            message_placeholder = st.empty()
+            full_response = ""
+            for word in response_generator(prompt):
+                full_response += word
+                message_placeholder.write(full_response, unsafe_allow_html=True)
+
+            # logger.info(f"Full Response Text: {full_response}")
+            message_placeholder.write(full_response, unsafe_allow_html=True)
+
+            book_card_html = """
+            <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; max-width: 350px; background-color: #f9f9f9; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                <img src="https://m.media-amazon.com/images/I/A1U18nHbNNL._SL1500_.jpg" alt="Book Cover" 
+                     style="width: 100%; height: auto; object-fit: contain; border-radius: 5px;">
+                <h3 style="font-size: 1.2em; margin: 10px 0;">Sea of Tranquility</h3>
+                <p>Author: Emily St. John</p>
+                <p>Price: $19.99</p>
+                <button style="background-color: #007bff; color: white; border: none; padding: 10px 20px; text-align: center; 
+                                text-decoration: none; display: inline-block; font-size: 14px; border-radius: 5px; cursor: pointer;">
+                    Buy Now
+                </button>
+            </div>
+            """
+            # testing simple card
+            # st.components.v1.html(book_card_html, height=800)
+
+        # st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 
 def get_response(response_list):
@@ -118,8 +145,6 @@ def get_response(response_list):
                 response = response + "\n" + agent_text
 
             if isinstance(m, HaleyContainer):
-                # handle here?
-                # logger.info(f"HaleyContainer: {m.to_json(pretty_print=False)}")
                 container_in = m
                 object_list = VitalSignsUtils.unpack_container(container_in)
                 for o in object_list:
@@ -180,6 +205,12 @@ async def generate_responses(prompt_message):
 
     await client.open_websocket()
 
+    # hasSessionID
+    # hasAuthSessionID
+    # hasAccountURI
+    # hasUserID (email)
+    # hasUsername (First and Last name)
+
     aimp_msg = AIMPIntent()
     aimp_msg.URI = URIGenerator.generate_uri()
     aimp_msg.aIMPIntentType = "http://vital.ai/ontology/vital-aimp#AIMPIntentType_CHAT"
@@ -187,8 +218,6 @@ async def generate_responses(prompt_message):
     user_content = UserMessageContent()
     user_content.URI = URIGenerator.generate_uri()
     user_content.text = prompt_message
-
-    # logger.info(st.session_state.messages)
 
     history_list = generate_history_list(st.session_state.messages[:-1])
 
@@ -217,10 +246,15 @@ async def generate_responses(prompt_message):
 
     logger.info(f"Response Text: {response}")
 
-    for word in response.split():
-        yield word + " "
-        # await asyncio.sleep(0.05)
-        time.sleep(0.05)
+    # for word in response.split():
+    #    yield word + " "
+    #    time.sleep(0.05)
+
+    tokens = re.split(r'(\s+)', response)
+    for token in tokens:
+        yield token
+        if not token.isspace():
+            time.sleep(0.05)
 
 
 def response_generator(prompt):
