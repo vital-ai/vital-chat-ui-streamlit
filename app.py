@@ -17,7 +17,6 @@ from vital_agent_container_client.vital_agent_container_client import VitalAgent
 from vital_agent_kg_utils.vitalsignsutils.vitalsignsutils import VitalSignsUtils
 from vital_ai_vitalsigns.utils.uri_generator import URIGenerator
 from vital_ai_vitalsigns.vitalsigns import VitalSigns
-
 from vital_chat_ui_app.utils.config_utils import ConfigUtils
 
 logging.basicConfig(
@@ -45,7 +44,21 @@ class ChatSessionState:
     session_history: list = []
 
 
+account_uri: str
+login_id: str
+username: str
+use_streamlit_session_id: bool
+session_id: str
+
+
 def main():
+
+    global account_uri
+    global login_id
+    global username
+    global use_streamlit_session_id
+
+    global session_id
 
     vs = VitalSigns()
 
@@ -60,6 +73,13 @@ def main():
     config = ConfigUtils.load_config()
 
     logger.info("Chat UI Config Loaded.")
+
+    chat_config = config['vital_chat_ui']
+
+    account_uri = chat_config['account_uri']
+    login_id = chat_config['login_id']
+    username = chat_config['username']
+    use_streamlit_session_id = chat_config['use_streamlit_session_id']
 
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(id(st.session_state))
@@ -195,8 +215,10 @@ async def generate_responses(prompt_message):
 
     handler = LocalMessageHandler()
 
+    # external to docker
     # client = VitalAgentContainerClient("http://localhost:7007", handler)
 
+    # within docker
     client = VitalAgentContainerClient("http://host.docker.internal:7007", handler)
 
     health = await client.check_health()
@@ -214,6 +236,13 @@ async def generate_responses(prompt_message):
     aimp_msg = AIMPIntent()
     aimp_msg.URI = URIGenerator.generate_uri()
     aimp_msg.aIMPIntentType = "http://vital.ai/ontology/vital-aimp#AIMPIntentType_CHAT"
+
+    aimp_msg.accountURI = account_uri
+    aimp_msg.username = username
+    aimp_msg.userID = login_id
+
+    aimp_msg.sessionID = session_id
+    aimp_msg.authSessionID = session_id
 
     user_content = UserMessageContent()
     user_content.URI = URIGenerator.generate_uri()
