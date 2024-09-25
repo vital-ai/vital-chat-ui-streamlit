@@ -1,0 +1,78 @@
+
+<link rel="stylesheet" href="https://app-test-1.testing.chat.ai/chat-messages-renderer/css/weather-icons.min.css">
+
+<link rel="stylesheet" href="https://app-test-1.testing.chat.ai/chat-messages-renderer/css/font-awesome.min.css">
+
+<link rel="stylesheet" href="https://app-test-1.testing.chat.ai/bootstrap/css/bootstrap.css">
+
+<script>
+        var socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:8999/ws");  // Connect to FastAPI WebSocket
+            socket.onmessage = function(event) {
+                // Display the message received from WebSocket
+                // document.getElementById("wsMessages").innerHTML += "<p>" + event.data + "</p>";
+            };
+        }
+
+        function sendMessage() {
+
+            socket = new WebSocket("ws://localhost:8999/ws");  // Connect to FastAPI WebSocket
+
+            socket.onopen = function(event) {
+
+                socket.send("click");
+
+                console.log("Message sent: " + "click");
+
+            };
+
+
+
+        }
+
+
+
+
+    </script>
+
+
+<div class="weather-panel panel panel-primary">
+  <div class="panel-heading">Weather: {{ searchString }}</div>
+  <div class="panel-body">
+    <div class="col-xs-6 col-sm-6 col-md-6" style="text-align: center; font-size: 30px; line-height: 30px;">
+      <span class="wi {{ mainIcon }}"></span>
+      <p><b>{{ summary }}</b></p>
+    </div>
+    <div class="col-xs-6 col-sm-6 col-md-6">
+      <p>Temperature: {{ temperature }} &deg;F<br>
+      Precipitation: {{ precipitation }}%<br>
+      Humidity: {{ humidity }}% <br>
+      Wind: {{ wind }} mph
+      </p>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <table class="weather-table">
+    <tbody>
+      <tr>
+        {% for day in days %}
+          <td style="text-align: center;">{{ day.dow }}<br><span class="wi {{ day.icon }}"></span><br><span style="color: #4c9ed9;">{{ day.maxTemp }}&deg;F</span> . <span style="color: #707070;">{{ day.minTemp }}&deg;F</span></td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+
+  {% if not staticCard %}
+
+    <div class="panel-footer" style="text-align: center;">
+
+          <button type="button" class="btn btn-primary" onclick="sendMessage()">More Info</button>
+
+    </div>
+
+  {% endif %}
+</div>
+

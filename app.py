@@ -1,9 +1,11 @@
 import json
 import logging
 import re
+import threading
 import streamlit as st
 import time
 import asyncio
+import uvicorn
 from ai_haley_kg_domain.model.KGChatBotMessage import KGChatBotMessage
 from ai_haley_kg_domain.model.KGChatUserMessage import KGChatUserMessage
 from ai_haley_kg_domain.model.KGToolRequest import KGToolRequest
@@ -18,6 +20,11 @@ from vital_agent_kg_utils.vitalsignsutils.vitalsignsutils import VitalSignsUtils
 from vital_ai_vitalsigns.utils.uri_generator import URIGenerator
 from vital_ai_vitalsigns.vitalsigns import VitalSigns
 from vital_chat_ui_app.utils.config_utils import ConfigUtils
+from jinja2 import Environment, FileSystemLoader
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+import threading
+
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -74,6 +81,67 @@ def main():
 
     logger.info("Chat UI Config Loaded.")
 
+    app = FastAPI()
+
+    # using websocket as its more forgiving for localhost security
+    # and because we want two-way communication
+    # initial testing is with "cards" which have a button which can trigger
+    # a message being sent to the agent.  due to how streamlit works, the python side will send the message.
+    # the full implementation has the javascript side sending the message.
+
+    # to test the client side more we may want to include vitalsigns js and the domains
+    # on the browser side, but the immediate need is to test the basic capability of
+    # displaying "cards" in the UI that contain data from the agent to validate agent functionality.
+
+    # note: important to open the port for the websocket for docker
+
+    @app.get("/")
+    async def get():
+        return HTMLResponse("WebSocket server is running!")
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await websocket.accept()
+        while True:
+            data = await websocket.receive_text()
+            logger.info(f"WebSocket received message: {data}")
+            await websocket.send_text(f"Message received: {data}")
+
+    def run_api():
+        uvicorn.run(app, host="0.0.0.0", port=8999)
+
+    api_thread = threading.Thread(target=run_api, daemon=True)
+    api_thread.start()
+
+    env = Environment(loader=FileSystemLoader('templates'))
+
+    product_card_template = env.get_template('product_card.jinja2')
+
+    rendered_product_card = product_card_template.render()
+
+    sample_weather_data = {
+        "searchString": "New York City",
+        "mainIcon": "wi-day-sunny",
+        "summary": "Clear skies with sunshine",
+        "temperature": 75,
+        "precipitation": 10,
+        "humidity": 60,
+        "wind": 12,
+        "days": [
+            {"dow": "Mon", "icon": "wi-day-cloudy", "maxTemp": 79, "minTemp": 70},
+            {"dow": "Tue", "icon": "wi-day-rain", "maxTemp": 75, "minTemp": 68},
+            {"dow": "Wed", "icon": "wi-day-sunny", "maxTemp": 85, "minTemp": 72},
+            {"dow": "Thu", "icon": "wi-day-storm-showers", "maxTemp": 77, "minTemp": 69},
+            {"dow": "Fri", "icon": "wi-day-fog", "maxTemp": 78, "minTemp": 70}
+        ],
+        "staticCard": False,
+        "forecastIoLink": "https://weather.com"
+    }
+
+    weather_card_template = env.get_template('weather_card.jinja2')
+
+    rendered_weather_card = weather_card_template.render(sample_weather_data)
+
     chat_config = config['vital_chat_ui']
 
     account_uri = chat_config['account_uri']
@@ -106,7 +174,6 @@ def main():
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            # response = st.write_stream(response_generator(prompt))
 
             message_placeholder = st.empty()
             full_response = ""
@@ -117,23 +184,10 @@ def main():
             # logger.info(f"Full Response Text: {full_response}")
             message_placeholder.write(full_response, unsafe_allow_html=True)
 
-            book_card_html = """
-            <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; max-width: 350px; background-color: #f9f9f9; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                <img src="https://m.media-amazon.com/images/I/A1U18nHbNNL._SL1500_.jpg" alt="Book Cover" 
-                     style="width: 100%; height: auto; object-fit: contain; border-radius: 5px;">
-                <h3 style="font-size: 1.2em; margin: 10px 0;">Sea of Tranquility</h3>
-                <p>Author: Emily St. John</p>
-                <p>Price: $19.99</p>
-                <button style="background-color: #007bff; color: white; border: none; padding: 10px 20px; text-align: center; 
-                                text-decoration: none; display: inline-block; font-size: 14px; border-radius: 5px; cursor: pointer;">
-                    Buy Now
-                </button>
-            </div>
-            """
-            # testing simple card
-            # st.components.v1.html(book_card_html, height=800)
+            # testing simple product and weather card
+            # st.components.v1.html(rendered_product_card, height=800)
+            # st.components.v1.html(rendered_weather_card, height=300)
 
-        # st.session_state.messages.append({"role": "assistant", "content": response})
         st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 
