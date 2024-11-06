@@ -5,7 +5,6 @@ services:
     build: .
     ports:
       - "8181:8181"
-      - "8999:8999"
     environment:
       - STREAMLIT_SERVER_FILE_WATCHER_TYPE="none"
       - STREAMLIT_SERVER_RUN_ON_SAVE=false

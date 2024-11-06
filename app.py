@@ -23,7 +23,6 @@ from vital_chat_ui_app.utils.config_utils import ConfigUtils
 from jinja2 import Environment, FileSystemLoader
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
-import threading
 
 
 logging.basicConfig(
@@ -51,6 +50,10 @@ class ChatSessionState:
     session_history: list = []
 
 
+agent_hostname: str
+agent_port: int
+agent_path: str
+
 account_uri: str
 login_id: str
 username: str
@@ -59,6 +62,10 @@ session_id: str
 
 
 def main():
+
+    global agent_hostname
+    global agent_port
+    global agent_path
 
     global account_uri
     global login_id
@@ -110,8 +117,8 @@ def main():
     def run_api():
         uvicorn.run(app, host="0.0.0.0", port=8999)
 
-    api_thread = threading.Thread(target=run_api, daemon=True)
-    api_thread.start()
+    # api_thread = threading.Thread(target=run_api, daemon=True)
+    # api_thread.start()
 
     env = Environment(loader=FileSystemLoader('templates'))
 
@@ -143,6 +150,10 @@ def main():
     rendered_weather_card = weather_card_template.render(sample_weather_data)
 
     chat_config = config['vital_chat_ui']
+
+    agent_hostname = chat_config['agent_hostname']
+    agent_port = chat_config['agent_port']
+    agent_path = chat_config['agent_path']
 
     account_uri = chat_config['account_uri']
     login_id = chat_config['login_id']
@@ -218,6 +229,8 @@ def get_response(response_list):
                 agent_text = str(m.text)
                 response = response + "\n" + agent_text
 
+            # TODO return card(s) in response?
+
             if isinstance(m, HaleyContainer):
                 container_in = m
                 object_list = VitalSignsUtils.unpack_container(container_in)
@@ -273,7 +286,7 @@ async def generate_responses(prompt_message):
     # client = VitalAgentContainerClient("http://localhost:7007", handler)
 
     # within docker
-    client = VitalAgentContainerClient("http://host.docker.internal:7007", handler)
+    client = VitalAgentContainerClient(f"http://{agent_hostname}:{agent_port}{agent_path}", handler)
 
     health = await client.check_health()
 
@@ -321,11 +334,17 @@ async def generate_responses(prompt_message):
     await client.wait_for_close_or_timeout(60)
     await client.close_websocket()
 
+    # TODO later render messages as they are received
+
     logger.info(f"Client Closed")
 
     response_list = handler.get_response()
 
+    # TODO response to include thinking messages, text, and any cards
     response = get_response(response_list)
+
+    # TODO first render "thinking" message(s)
+    # maybe render as a carousel allowing flipping through them?
 
     logger.info(f"Response Text: {response}")
 
@@ -334,10 +353,41 @@ async def generate_responses(prompt_message):
     #    time.sleep(0.05)
 
     tokens = re.split(r'(\s+)', response)
+
     for token in tokens:
         yield token
         if not token.isspace():
             time.sleep(0.05)
+
+    # move env to global
+    # the cards render after the yields complete
+
+    env = Environment(loader=FileSystemLoader('templates'))
+
+    sample_weather_data = {
+        "searchString": "New York City",
+        "mainIcon": "wi-day-sunny",
+        "summary": "Clear skies with sunshine",
+        "temperature": 75,
+        "precipitation": 10,
+        "humidity": 60,
+        "wind": 12,
+        "days": [
+            {"dow": "Mon", "icon": "wi-day-cloudy", "maxTemp": 79, "minTemp": 70},
+            {"dow": "Tue", "icon": "wi-day-rain", "maxTemp": 75, "minTemp": 68},
+            {"dow": "Wed", "icon": "wi-day-sunny", "maxTemp": 85, "minTemp": 72},
+            {"dow": "Thu", "icon": "wi-day-storm-showers", "maxTemp": 77, "minTemp": 69},
+            {"dow": "Fri", "icon": "wi-day-fog", "maxTemp": 78, "minTemp": 70}
+        ],
+        "staticCard": False,
+        "forecastIoLink": "https://weather.com"
+    }
+
+    weather_card_template = env.get_template('weather_card.jinja2')
+
+    rendered_weather_card = weather_card_template.render(sample_weather_data)
+
+    st.components.v1.html(rendered_weather_card, height=300)
 
 
 def response_generator(prompt):

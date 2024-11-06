@@ -3,13 +3,12 @@ asyncio>=3.4.3
 websockets>=12.0
 vital-agent-container-client>=0.0.3
 vital-agent-eval-env>=0.0.3
-vital-ai-haley-kg>=0.1.18
+vital-ai-haley-kg>=0.1.19
 vital-ai-aimp>=0.1.7
-vital-ai-vitalsigns>=0.1.21
+vital-ai-vitalsigns>=0.1.22
 vital-agent-kg-utils>=0.1.1
 pyyaml
 jinja2>=2.1.5
 fastapi
 uvicorn[standard]
-
-
+vital-ai-chat>=0.1.11

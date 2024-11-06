@@ -1,4 +1,11 @@
 vital_chat_ui:
+
+  agent_hostname: "host.docker.internal"
+  agent_port: 7007
+  agent_path: ""
+
+  message_domain: "vital-ai-aimp"
+
   account_uri: "account_id"
   login_id: "login_id"
   username: "Firstname Lastname"
