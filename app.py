@@ -1,11 +1,14 @@
 import json
 import logging
 import re
-import threading
 import streamlit as st
 import time
 import asyncio
 import uvicorn
+from ai_chat_domain.model.HaleyChatBotMessage import HaleyChatBotMessage
+from ai_chat_domain.model.HaleyChatIntent import HaleyChatIntent
+from ai_chat_domain.model.HaleyChatInteraction import HaleyChatInteraction
+from ai_chat_domain.model.HaleyChatUserMessage import HaleyChatUserMessage
 from ai_haley_kg_domain.model.KGChatBotMessage import KGChatBotMessage
 from ai_haley_kg_domain.model.KGChatUserMessage import KGChatUserMessage
 from ai_haley_kg_domain.model.KGToolRequest import KGToolRequest
@@ -37,7 +40,8 @@ class LocalMessageHandler(AIMPMessageHandlerInf):
         self.response_list = []
 
     async def receive_message(self, message):
-        print(f"Local Handler Received message: {message}")
+        logger = logging.getLogger(__name__)
+        logger.info(f"Local Handler Received message: {message}")
         self.response_list.append(message)
         return
 
@@ -49,6 +53,8 @@ class ChatSessionState:
     session_id: str
     session_history: list = []
 
+
+message_domain: str
 
 agent_hostname: str
 agent_port: int
@@ -62,6 +68,8 @@ session_id: str
 
 
 def main():
+
+    global message_domain
 
     global agent_hostname
     global agent_port
@@ -151,6 +159,8 @@ def main():
 
     chat_config = config['vital_chat_ui']
 
+    message_domain = chat_config['message_domain']
+
     agent_hostname = chat_config['agent_hostname']
     agent_port = chat_config['agent_port']
     agent_path = chat_config['agent_path']
@@ -214,9 +224,11 @@ def get_response(response_list):
 
     for response_msg in response_list:
 
-        logger.info(f"get_response: response_msg: {response_msg}")
+        # logger.info(f"get_response: response_msg: {response_msg}")
 
         message_list = []
+
+        unpacked_message_list = []
 
         for m in response_msg:
             m_string = json.dumps(m)
@@ -224,10 +236,6 @@ def get_response(response_list):
             message_list.append(go)
 
         for m in message_list:
-
-            if isinstance(m, AgentMessageContent):
-                agent_text = str(m.text)
-                response = response + "\n" + agent_text
 
             # TODO return card(s) in response?
 
@@ -237,6 +245,20 @@ def get_response(response_list):
                 for o in object_list:
                     logger.info(f"Object: {o.to_json(pretty_print=False)}")
                     session_state.session_history.append(o)
+                    unpacked_message_list.append(o)
+            else:
+                unpacked_message_list.append(m)
+
+        for m in unpacked_message_list:
+
+            if isinstance(m, AgentMessageContent):
+                agent_text = str(m.text)
+                response = response + "\n" + agent_text
+
+            if isinstance(m, HaleyChatBotMessage):
+                if m.chatGeneratedMessage:
+                    agent_text = str(m.chatGeneratedMessage)
+                    response = response + "\n" + agent_text
 
     return response
 
@@ -300,30 +322,66 @@ async def generate_responses(prompt_message):
     # hasUserID (email)
     # hasUsername (First and Last name)
 
-    aimp_msg = AIMPIntent()
-    aimp_msg.URI = URIGenerator.generate_uri()
-    aimp_msg.aIMPIntentType = "http://vital.ai/ontology/vital-aimp#AIMPIntentType_CHAT"
+    message = []
 
-    aimp_msg.accountURI = account_uri
-    aimp_msg.username = username
-    aimp_msg.userID = login_id
+    history_list = []
 
-    aimp_msg.sessionID = session_id
-    aimp_msg.authSessionID = session_id
+    if message_domain == "vital-ai-aimp":
 
-    user_content = UserMessageContent()
-    user_content.URI = URIGenerator.generate_uri()
-    user_content.text = prompt_message
+        aimp_msg = AIMPIntent()
+        aimp_msg.URI = URIGenerator.generate_uri()
+        aimp_msg.aIMPIntentType = "http://vital.ai/ontology/vital-aimp#AIMPIntentType_CHAT"
 
-    history_list = generate_history_list(st.session_state.messages[:-1])
+        aimp_msg.accountURI = account_uri
+        aimp_msg.username = username
+        aimp_msg.userID = login_id
 
-    message = [aimp_msg, user_content]
+        aimp_msg.sessionID = session_id
+        aimp_msg.authSessionID = session_id
 
-    if len(history_list) > 0:
+        user_content = UserMessageContent()
+        user_content.URI = URIGenerator.generate_uri()
+        user_content.text = prompt_message
+
+        history_list = generate_history_list(st.session_state.messages[:-1])
+
+        message = [aimp_msg, user_content]
+
+        if len(history_list) > 0:
+            container_out = HaleyContainer()
+            container_out.URI = URIGenerator.generate_uri()
+            container_out = VitalSignsUtils.pack_container(container_out, history_list)
+            message.append(container_out)
+
+    if message_domain == "vital-ai-chat":
+
+        interaction = HaleyChatInteraction()
+        interaction.URI = URIGenerator.generate_uri()
+
+        interaction.haleyChatInteractionTypeURI = "http://vital.ai/ontology/chat-ai#HaleyChatInteraction_CHAT"
+        interaction.haleyChatInteractionModelTypeURI = "http://vital.ai/ontology/chat-ai#HaleyChatInteractionModelType_OpenAI_ChatGPT_4o"
+
+        chat_intent = HaleyChatIntent()
+        chat_intent.URI = URIGenerator.generate_uri()
+
+        chat_intent.accountURI = account_uri
+        chat_intent.username = username
+        chat_intent.userID = login_id
+
+        chat_intent.sessionID = session_id
+        chat_intent.authSessionID = session_id
+
+        user_msg = HaleyChatUserMessage()
+        user_msg.URI = URIGenerator.generate_uri()
+
+        user_msg.chatTextMessage = prompt_message
+
         container_out = HaleyContainer()
         container_out.URI = URIGenerator.generate_uri()
-        container_out = VitalSignsUtils.pack_container(container_out, history_list)
-        message.append(container_out)
+
+        container_out = VitalSignsUtils.pack_container(container_out, [interaction])
+
+        message = [chat_intent, user_msg, interaction, container_out]
 
     # string
     message_json = vs.to_json(message)
@@ -331,7 +389,9 @@ async def generate_responses(prompt_message):
     message_list = json.loads(message_json)
 
     await client.send_message(message_list)
+
     await client.wait_for_close_or_timeout(60)
+
     await client.close_websocket()
 
     # TODO later render messages as they are received
@@ -339,6 +399,8 @@ async def generate_responses(prompt_message):
     logger.info(f"Client Closed")
 
     response_list = handler.get_response()
+
+    # logger.info(f"Response List: {response_list}")
 
     # TODO response to include thinking messages, text, and any cards
     response = get_response(response_list)
@@ -386,8 +448,8 @@ async def generate_responses(prompt_message):
     weather_card_template = env.get_template('weather_card.jinja2')
 
     rendered_weather_card = weather_card_template.render(sample_weather_data)
-
-    st.components.v1.html(rendered_weather_card, height=300)
+    # adding sample weather card
+    # st.components.v1.html(rendered_weather_card, height=300)
 
 
 def response_generator(prompt):
