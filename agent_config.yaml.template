@@ -6,6 +6,9 @@ vital_chat_ui:
 
   message_domain: "vital-ai-aimp"
 
+  chat_interaction_type: "HaleyChatInteraction_CHAT"
+  # chat_interaction_type: "HaleyChatInteraction_CHAT_KG"
+
   account_uri: "account_id"
   login_id: "login_id"
   username: "Firstname Lastname"

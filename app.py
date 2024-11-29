@@ -15,7 +15,9 @@ from ai_haley_kg_domain.model.KGToolRequest import KGToolRequest
 from ai_haley_kg_domain.model.KGToolResult import KGToolResult
 from com_vitalai_aimp_domain.model.AIMPIntent import AIMPIntent
 from com_vitalai_aimp_domain.model.AgentMessageContent import AgentMessageContent
+from com_vitalai_aimp_domain.model.HaleyWeatherMessage import HaleyWeatherMessage
 from com_vitalai_aimp_domain.model.UserMessageContent import UserMessageContent
+from com_vitalai_aimp_domain.model.WeatherForecast import WeatherForecast
 from com_vitalai_haleyai_question_domain.model.HaleyContainer import HaleyContainer
 from vital_agent_container_client.aimp_message_handler_inf import AIMPMessageHandlerInf
 from vital_agent_container_client.vital_agent_container_client import VitalAgentContainerClient
@@ -26,6 +28,7 @@ from vital_chat_ui_app.utils.config_utils import ConfigUtils
 from jinja2 import Environment, FileSystemLoader
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
+from datetime import datetime
 
 
 logging.basicConfig(
@@ -56,6 +59,8 @@ class ChatSessionState:
 
 message_domain: str
 
+chat_interaction_type: str
+
 agent_hostname: str
 agent_port: int
 agent_path: str
@@ -67,9 +72,96 @@ use_streamlit_session_id: bool
 session_id: str
 
 
+def transform(input_data):
+    icon_mapping = {
+        0: "wi-day-sunny",  # Clear sky
+        1: "wi-day-sunny-overcast",  # Mainly clear
+        2: "wi-day-cloudy",  # Partly cloudy
+        3: "wi-day-cloudy",  # Overcast
+        45: "wi-fog",  # Fog
+        48: "wi-fog",  # Depositing rime fog
+        51: "wi-day-showers",  # Drizzle: Light
+        53: "wi-day-showers",  # Drizzle: Moderate
+        55: "wi-day-storm-showers",  # Drizzle: Dense
+        61: "wi-day-rain",  # Rain: Slight
+        63: "wi-day-rain",  # Rain: Moderate
+        65: "wi-day-rain",  # Rain: Heavy
+        66: "wi-day-sleet",  # Freezing rain: Light
+        67: "wi-day-sleet",  # Freezing rain: Heavy
+        71: "wi-day-snow",  # Snow fall: Slight
+        73: "wi-day-snow",  # Snow fall: Moderate
+        75: "wi-day-snow",  # Snow fall: Heavy
+        77: "wi-snowflake-cold",  # Snow grains
+        80: "wi-day-showers",  # Rain showers: Slight
+        81: "wi-day-showers",  # Rain showers: Moderate
+        82: "wi-day-showers",  # Rain showers: Violent
+        85: "wi-day-snow",  # Snow showers: Slight
+        86: "wi-day-snow",  # Snow showers: Heavy
+        95: "wi-thunderstorm",  # Thunderstorm: Slight or moderate
+        96: "wi-thunderstorm",  # Thunderstorm with slight hail
+        99: "wi-thunderstorm"  # Thunderstorm with heavy hail
+    }
+
+    description_mapping = {
+        0: "Sunny",
+        1: "Sunny and Overcast",
+        2: "Partly cloudy",
+        3: "Cloudy",
+        45: "Fog",
+        48: "Depositing rime fog",
+        51: "Light Rain",
+        53: "Moderate Rain",
+        55: "Storm Showers",
+        61: "Slight Rain",
+        63: "Moderate Rain",
+        65: "Heavy Rain",
+        66: "Sleet and Freezing Rain",
+        67: "Heavy Sleet and Freezing Rain",
+        71: "Light Snow",
+        73: "Moderate Snow",
+        75: "Heavy Snow",
+        77: "Snowflakes",
+        80: "Slight Rain Showers",
+        81: "Moderate Rain Showers",
+        82: "Heavy Rain Showers",
+        85: "Slight Snow",
+        86: "Heavy Snow",
+        95: "Thunderstorm",
+        96: "Thunderstorm and Hail",
+        99: "Thunderstorm and Heavy Hail"
+    }
+
+    # Transform the data
+    transformed_data = {
+        "searchString": input_data["place_label"],
+        "mainIcon": icon_mapping.get(input_data["weather_code"], "wi-day-sunny"),
+        "summary": description_mapping.get(input_data["weather_code"], input_data["weather_code_description"]),
+        "temperature": round(input_data["temperature"]),
+        "precipitation": input_data["precipitation_probability"],
+        "humidity": input_data["humidity"],
+        "wind": round(input_data["wind_speed"]),
+        "days": [
+            {
+                "dow": datetime.strptime(day["date"], "%Y-%m-%d").strftime("%a"),
+                "icon": icon_mapping.get(day["weather_code"], "wi-day-sunny"),
+                "maxTemp": round(day["temperature_max"]),
+                "minTemp": round(day["temperature_min"])
+            }
+            for day in input_data["daily_predictions"][:7]
+        ],
+        "staticCard": False,
+        "agentWeatherLink": f'https://www.chat.ai'
+    }
+
+    return transformed_data
+
+
+
 def main():
 
     global message_domain
+
+    global chat_interaction_type
 
     global agent_hostname
     global agent_port
@@ -161,6 +253,8 @@ def main():
 
     message_domain = chat_config['message_domain']
 
+    chat_interaction_type = chat_config['chat_interaction_type']
+
     agent_hostname = chat_config['agent_hostname']
     agent_port = chat_config['agent_port']
     agent_path = chat_config['agent_path']
@@ -185,7 +279,10 @@ def main():
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message["role"] == "assistant" and "html" in message:
+                st.components.v1.html(message["content"], height=300)
+            else:
+                st.markdown(message["content"])
 
     if prompt := st.chat_input("Message to Agent"):
 
@@ -209,7 +306,7 @@ def main():
             # st.components.v1.html(rendered_product_card, height=800)
             # st.components.v1.html(rendered_weather_card, height=300)
 
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        # st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 
 def get_response(response_list):
@@ -263,7 +360,7 @@ def get_response(response_list):
     return response
 
 
-def generate_history_list(message_list):
+def generate_history_list(message_list, message_domain: str):
 
     history_list = []
 
@@ -281,17 +378,32 @@ def generate_history_list(message_list):
         role = m["role"]
         content = m["content"]
 
-        if role == "user":
-            user_message = KGChatUserMessage()
-            user_message.URI = URIGenerator.generate_uri()
-            user_message.kGChatMessageText = content
-            history_list.append(user_message)
+        if message_domain == "vital-ai-aimp":
 
-        if role == "assistant":
-            bot_message = KGChatBotMessage()
-            bot_message.URI = URIGenerator.generate_uri()
-            bot_message.kGChatMessageText = content
-            history_list.append(bot_message)
+            if role == "user":
+                user_message = KGChatUserMessage()
+                user_message.URI = URIGenerator.generate_uri()
+                user_message.kGChatMessageText = content
+                history_list.append(user_message)
+
+            if role == "assistant":
+                bot_message = KGChatBotMessage()
+                bot_message.URI = URIGenerator.generate_uri()
+                bot_message.kGChatMessageText = content
+                history_list.append(bot_message)
+
+        if message_domain == "vital-ai-chat":
+            if role == "user":
+                user_message = HaleyChatUserMessage()
+                user_message.URI = URIGenerator.generate_uri()
+                user_message.chatTextMessage = content
+                history_list.append(user_message)
+
+            if role == "assistant":
+                bot_message = HaleyChatBotMessage()
+                bot_message.URI = URIGenerator.generate_uri()
+                bot_message.chatGeneratedMessage = content
+                history_list.append(bot_message)
 
     return history_list
 
@@ -343,7 +455,7 @@ async def generate_responses(prompt_message):
         user_content.URI = URIGenerator.generate_uri()
         user_content.text = prompt_message
 
-        history_list = generate_history_list(st.session_state.messages[:-1])
+        history_list = generate_history_list(st.session_state.messages[:-1], message_domain)
 
         message = [aimp_msg, user_content]
 
@@ -358,8 +470,13 @@ async def generate_responses(prompt_message):
         interaction = HaleyChatInteraction()
         interaction.URI = URIGenerator.generate_uri()
 
-        interaction.haleyChatInteractionTypeURI = "http://vital.ai/ontology/chat-ai#HaleyChatInteraction_CHAT"
+        # this may be irrelevant in the KG case
         interaction.haleyChatInteractionModelTypeURI = "http://vital.ai/ontology/chat-ai#HaleyChatInteractionModelType_OpenAI_ChatGPT_4o"
+
+        interaction.haleyChatInteractionTypeURI = "http://vital.ai/ontology/chat-ai#HaleyChatInteraction_CHAT"
+
+        if chat_interaction_type == "HaleyChatInteraction_CHAT_KG":
+            interaction.haleyChatInteractionTypeURI = "http://vital.ai/ontology/chat-ai#HaleyChatInteraction_CHAT_KG"
 
         chat_intent = HaleyChatIntent()
         chat_intent.URI = URIGenerator.generate_uri()
@@ -376,10 +493,15 @@ async def generate_responses(prompt_message):
 
         user_msg.chatTextMessage = prompt_message
 
+        history_list = generate_history_list(st.session_state.messages[:-1], message_domain)
+
+        container_list = [interaction]
+
+        container_list.extend(history_list)
+
         container_out = HaleyContainer()
         container_out.URI = URIGenerator.generate_uri()
-
-        container_out = VitalSignsUtils.pack_container(container_out, [interaction])
+        container_out = VitalSignsUtils.pack_container(container_out, container_list)
 
         message = [chat_intent, user_msg, interaction, container_out]
 
@@ -390,7 +512,8 @@ async def generate_responses(prompt_message):
 
     await client.send_message(message_list)
 
-    await client.wait_for_close_or_timeout(60)
+    # long timeout for the initial vitalsigns domain loading during testing
+    await client.wait_for_close_or_timeout(120)
 
     await client.close_websocket()
 
@@ -421,35 +544,46 @@ async def generate_responses(prompt_message):
         if not token.isspace():
             time.sleep(0.05)
 
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
     # move env to global
     # the cards render after the yields complete
 
     env = Environment(loader=FileSystemLoader('templates'))
-
-    sample_weather_data = {
-        "searchString": "New York City",
-        "mainIcon": "wi-day-sunny",
-        "summary": "Clear skies with sunshine",
-        "temperature": 75,
-        "precipitation": 10,
-        "humidity": 60,
-        "wind": 12,
-        "days": [
-            {"dow": "Mon", "icon": "wi-day-cloudy", "maxTemp": 79, "minTemp": 70},
-            {"dow": "Tue", "icon": "wi-day-rain", "maxTemp": 75, "minTemp": 68},
-            {"dow": "Wed", "icon": "wi-day-sunny", "maxTemp": 85, "minTemp": 72},
-            {"dow": "Thu", "icon": "wi-day-storm-showers", "maxTemp": 77, "minTemp": 69},
-            {"dow": "Fri", "icon": "wi-day-fog", "maxTemp": 78, "minTemp": 70}
-        ],
-        "staticCard": False,
-        "forecastIoLink": "https://weather.com"
-    }
-
     weather_card_template = env.get_template('weather_card.jinja2')
 
-    rendered_weather_card = weather_card_template.render(sample_weather_data)
-    # adding sample weather card
-    # st.components.v1.html(rendered_weather_card, height=300)
+    weather_cards = []
+
+    for response_msg in response_list:
+
+        message_list = []
+
+        for m in response_msg:
+            m_string = json.dumps(m)
+            go = vs.from_json(m_string)
+            message_list.append(go)
+
+        aimp_msg = message_list[0]
+
+        if isinstance(aimp_msg, HaleyWeatherMessage):
+
+            weather_card = message_list[1]
+
+            if isinstance(weather_card, WeatherForecast):
+
+                weather_json = str(weather_card.weatherJSONResponse)
+
+                weather_obj = json.loads(weather_json)
+
+                weather_data = transform(weather_obj)
+
+                rendered_weather_card = weather_card_template.render(weather_data)
+
+                st.components.v1.html(rendered_weather_card, height=300)
+
+                st.session_state.messages.append({"role": "assistant", "content": rendered_weather_card, "html": True})
+
+
 
 
 def response_generator(prompt):

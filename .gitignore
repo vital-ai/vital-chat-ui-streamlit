@@ -1,3 +1,4 @@
 .idea/*
 **/*.yaml
 **/__pycache__/*
+**/.DS_Store
